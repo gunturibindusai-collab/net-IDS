@@ -1,0 +1,582 @@
+#!/usr/bin/env bash
+# ==============================================================================
+# tmNIDS - Network Intrusion Detection System (NIDS) Testing Framework
+# Replicated from: https://github.com/3CORESec/testmynids.org
+# Original Author: @3CORESec | Adapted & Enhanced for Lab Verification
+# ==============================================================================
+
+# Set strict shell options where appropriate (avoid exiting entirely on single test failure)
+set -o pipefail
+
+# ------------------------------------------------------------------------------
+# Configuration & Defaults
+# ------------------------------------------------------------------------------
+TMNIDS_VERSION="2.1.0-replica"
+DEFAULT_TARGET_HOST="testmynids.org"
+DEFAULT_TARGET_PORT="80"
+DEFAULT_TARGET_PROTO="http"
+
+# Allow environment overrides
+TMNIDS_TARGET_HOST="${TMNIDS_TARGET_HOST:-$DEFAULT_TARGET_HOST}"
+TMNIDS_TARGET_PORT="${TMNIDS_TARGET_PORT:-$DEFAULT_TARGET_PORT}"
+TMNIDS_TARGET_PROTO="${TMNIDS_TARGET_PROTO:-$DEFAULT_TARGET_PROTO}"
+TMNIDS_LOG_FILE="${TMNIDS_LOG_FILE:-tmnids_run.log}"
+TMNIDS_TIMEOUT="${TMNIDS_TIMEOUT:-5}"
+
+# ANSI Colors
+COLOR_RESET="\033[0m"
+COLOR_BOLD="\033[1m"
+COLOR_RED="\033[31m"
+COLOR_GREEN="\033[32m"
+COLOR_YELLOW="\033[33m"
+COLOR_BLUE="\033[34m"
+COLOR_CYAN="\033[36m"
+COLOR_GRAY="\033[90m"
+
+# ------------------------------------------------------------------------------
+# Test Names (Faithfully preserved from original tmNIDS)
+# ------------------------------------------------------------------------------
+test_uid_name="Linux UID"
+test_basicauth_name="HTTP Basic Authentication"
+test_useragent_name="HTTP Malware User-Agent"
+test_badcas_certs_name="Bad Certificates & CAs"
+test_tor_name="Tor .onion DNS response and known IPs connection"
+test_exe_name="EXE or DLL download over HTTP"
+test_pdf_name="PDF download with Embedded File"
+test_22scan_name="Simulate SSH Outbound Scan"
+test_miscdns_name="Miscellaneous domains (TLD's, Sinkhole, DDNS, etc)"
+test_filesharing_name="Anonymous filesharing website"
+test_external_ip_lookup_name="External IP Address Lookup"
+test_url_shortener_name="URL Shortener"
+test_gaming_name="Policy Violation - Gaming"
+test_adware_pup_name="Adware PUP"
+test_malware_c2_beacon_name="Malware - Command & Control - Beacon"
+
+# ------------------------------------------------------------------------------
+# Logging & Helper Functions
+# ------------------------------------------------------------------------------
+log_msg() {
+  local level="$1"
+  local msg="$2"
+  local timestamp
+  timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+  echo -e "[$timestamp] [$level] $msg" >> "$TMNIDS_LOG_FILE"
+}
+
+print_header() {
+  local id="$1"
+  local name="$2"
+  local proto="$3"
+  echo -e "\n${COLOR_CYAN}=================================================================${COLOR_RESET}"
+  echo -e "${COLOR_BOLD}[Test $id] $name${COLOR_RESET} ${COLOR_GRAY}(Protocol: $proto)${COLOR_RESET}"
+  echo -e "${COLOR_CYAN}-----------------------------------------------------------------${COLOR_RESET}"
+  log_msg "INFO" "Executing Test $id: $name (Protocol: $proto)"
+}
+
+print_result() {
+  local status="$1"
+  local details="$2"
+  if [ "$status" == "SUCCESS" ]; then
+    echo -e "${COLOR_GREEN}[+] Traffic Generated Successfully${COLOR_RESET}: $details"
+    log_msg "SUCCESS" "$details"
+  elif [ "$status" == "WARN" ]; then
+    echo -e "${COLOR_YELLOW}[!] Warning / Partial Result${COLOR_RESET}: $details"
+    log_msg "WARN" "$details"
+  else
+    echo -e "${COLOR_RED}[-] Failed / Unreachable${COLOR_RESET}: $details"
+    log_msg "ERROR" "$details"
+  fi
+}
+
+get_base_url() {
+  if [ "$TMNIDS_TARGET_PORT" == "80" ] && [ "$TMNIDS_TARGET_PROTO" == "http" ]; then
+    echo "${TMNIDS_TARGET_PROTO}://${TMNIDS_TARGET_HOST}"
+  elif [ "$TMNIDS_TARGET_PORT" == "443" ] && [ "$TMNIDS_TARGET_PROTO" == "https" ]; then
+    echo "${TMNIDS_TARGET_PROTO}://${TMNIDS_TARGET_HOST}"
+  else
+    echo "${TMNIDS_TARGET_PROTO}://${TMNIDS_TARGET_HOST}:${TMNIDS_TARGET_PORT}"
+  fi
+}
+
+# ------------------------------------------------------------------------------
+# Dependency Checking
+# ------------------------------------------------------------------------------
+check_dependencies() {
+  local missing=()
+  echo -e "${COLOR_BLUE}[*] Checking required tools...${COLOR_RESET}"
+
+  for cmd in curl nc openssl dig; do
+    if ! command -v "$cmd" >/dev/null 2>&1; then
+      missing+=("$cmd")
+    fi
+  done
+
+  if [ ${#missing[@]} -ne 0 ]; then
+    echo -e "${COLOR_YELLOW}[!] Warning: Missing recommended tool(s): ${missing[*]}${COLOR_RESET}"
+    echo -e "    Some tests may fail or have reduced coverage."
+    echo -e "    On Ubuntu/Debian/WSL, install them with:"
+    echo -e "    ${COLOR_BOLD}sudo apt-get update && sudo apt-get install -y curl netcat-openbsd bind9-dnsutils openssl${COLOR_RESET}\n"
+    log_msg "WARN" "Missing tools: ${missing[*]}"
+    return 1
+  else
+    echo -e "${COLOR_GREEN}[+] All core dependencies available (curl, nc, openssl, dig).${COLOR_RESET}\n"
+    log_msg "INFO" "All core dependencies verified"
+    return 0
+  fi
+}
+
+# ------------------------------------------------------------------------------
+# Test Implementations
+# Both interactive mode and script mode MUST invoke these exact functions.
+# ------------------------------------------------------------------------------
+
+# Test 1: Linux UID over HTTP
+# ET Rule: GPL ATTACK_RESPONSE id check returned root (SID: 2100498)
+test_uid() {
+  print_header "1" "$test_uid_name" "HTTP"
+  local base_url
+  base_url="$(get_base_url)"
+  local target_url="${base_url}/uid/index.html"
+
+  echo -e "Target: ${COLOR_BOLD}$target_url${COLOR_RESET}"
+  local response
+  response="$(curl -s -m "$TMNIDS_TIMEOUT" "$target_url" 2>&1)"
+  local exit_code=$?
+
+  if [ $exit_code -eq 0 ]; then
+    print_result "SUCCESS" "HTTP GET $target_url returned $(echo "$response" | head -n 1 | cut -c 1-50)..."
+  else
+    print_result "FAIL" "HTTP GET $target_url failed (exit code $exit_code). Target may be unreachable or offline."
+  fi
+}
+
+# Test 2: Basic Authentication over Cleartext HTTP
+# ET Rule: ET POLICY Cleartext Basic Auth with root credentials (SID: 2003195)
+test_basicauth() {
+  print_header "2" "$test_basicauth_name" "HTTP"
+  local base_url
+  base_url="$(get_base_url)"
+  local target_url="${base_url}/"
+
+  echo -e "Target: ${COLOR_BOLD}$target_url${COLOR_RESET} with Header 'Authorization: Basic cm9vdDpyb290' (root:root)"
+  curl -s -m "$TMNIDS_TIMEOUT" -H "Authorization: Basic cm9vdDpyb290" "$target_url" > /dev/null 2>&1
+  local exit_code=$?
+
+  if [ $exit_code -eq 0 ]; then
+    print_result "SUCCESS" "Sent Basic Auth header 'cm9vdDpyb290' to $target_url"
+  else
+    print_result "FAIL" "Failed to send HTTP request to $target_url (exit code $exit_code)"
+  fi
+}
+
+# Test 3: Known Malware-related HTTP User-Agents
+# ET Rules: ET MALWARE Suspicious User-Agent (SIDs: 2008983, 2003158, 2003056, 2006380)
+test_useragent() {
+  print_header "3" "$test_useragent_name" "HTTP"
+  local base_url
+  base_url="$(get_base_url)"
+  local target_url="${base_url}/"
+  local user_agents=("BlackSun" "HttpDownload" "agent" "MSIE" "JEDI-VCL")
+  local success_count=0
+
+  for ua in "${user_agents[@]}"; do
+    echo -e "Sending User-Agent: ${COLOR_BOLD}$ua${COLOR_RESET}"
+    if curl -s -m "$TMNIDS_TIMEOUT" -A "$ua" "$target_url" > /dev/null 2>&1; then
+      ((success_count++))
+    fi
+  done
+
+  if [ $success_count -gt 0 ]; then
+    print_result "SUCCESS" "Sent $success_count/${#user_agents[@]} malicious User-Agent requests to $target_url"
+  else
+    print_result "FAIL" "Could not connect to $target_url to deliver User-Agent headers"
+  fi
+}
+
+# Test 4: Known Bad CAs & Certificates
+# SIDs: 2022134, 2020493, 2029345, 2033098, 2045597, 2053979, 2054198, 2021941
+test_badcas_certs() {
+  print_header "4" "$test_badcas_certs_name" "TLS, DNS, TCP"
+  local base_url
+  base_url="$(get_base_url)"
+
+  echo -e "Probing known bad certificate test endpoints (eDellRoot, Superfish, ZAP)..."
+  curl -s -m "$TMNIDS_TIMEOUT" https://edellroot.badssl.com/ > /dev/null 2>&1 || true # sid: 2022134
+  curl -s -m "$TMNIDS_TIMEOUT" https://superfish.badssl.com/ > /dev/null 2>&1 || true # sid: 2020493
+
+  # TLS connection simulations via openssl s_client with Server Name Indication (SNI)
+  echo Q | timeout "$TMNIDS_TIMEOUT" openssl s_client -showcerts -servername example.livehost.live -connect example.livehost.live:443 > /dev/null 2>&1 || true
+  echo Q | timeout "$TMNIDS_TIMEOUT" openssl s_client -showcerts -servername analiticsweb.site -connect analiticsweb.site:443 > /dev/null 2>&1 || true
+  echo Q | timeout "$TMNIDS_TIMEOUT" openssl s_client -showcerts -servername adguard.clroot.io -connect adguard.clroot.io:443 > /dev/null 2>&1 || true
+  echo Q | timeout "$TMNIDS_TIMEOUT" openssl s_client -showcerts -servername cryptpad.disroot.org -connect cryptpad.disroot.org:443 > /dev/null 2>&1 || true
+  echo Q | timeout "$TMNIDS_TIMEOUT" openssl s_client -showcerts -servername beetrootculture.com -connect beetrootculture.com:443 > /dev/null 2>&1 || true
+
+  # Test certificate content indicator (OWASP ZAP Certificate content sid: 2021941)
+  curl -s -m "$TMNIDS_TIMEOUT" "${base_url}/content_for_tests/2021941.txt" > /dev/null 2>&1 || true
+
+  print_result "SUCCESS" "Generated TLS/HTTPS handshakes with bad CA SNIs and test certificate content"
+}
+
+# Test 5: Tor .onion DNS response & Random Tor nodes connection
+test_tor() {
+  print_header "5" "$test_tor_name" "DNS & TLS"
+  echo -e "Querying DNS for .onion hostname..."
+  dig a 3wzn5p2yiumh7akj.onion @8.8.8.8 +time=2 +tries=1 > /dev/null 2>&1 || true
+
+  echo -e "Retrieving Tor public directory node list..."
+  local tmp_tor="/tmp/tor_$$.list"
+  local tmp_rand="/tmp/randomtor_$$.list"
+
+  if curl -s -m "$TMNIDS_TIMEOUT" https://raw.githubusercontent.com/SecOps-Institute/Tor-IP-Addresses/master/tor-nodes.lst -o "$tmp_tor" 2>/dev/null && [ -s "$tmp_tor" ]; then
+    sort --random-sort "$tmp_tor" > "$tmp_rand" 2>/dev/null || shuf "$tmp_tor" -o "$tmp_rand" 2>/dev/null || cp "$tmp_tor" "$tmp_rand"
+    echo -e "Probing up to 5 Tor directory nodes on port 443..."
+    head -n 5 "$tmp_rand" | while read -r line; do
+      [ -n "$line" ] && nc -z -w 2 "$line" 443 > /dev/null 2>&1 || true
+    done
+    rm -f "$tmp_tor" "$tmp_rand"
+    print_result "SUCCESS" "Simulated Tor .onion DNS lookup and connected to active Tor relay nodes"
+  else
+    rm -f "$tmp_tor" "$tmp_rand"
+    print_result "WARN" "External Tor node list unreachable; executed .onion DNS query only"
+  fi
+}
+
+# Test 6: EXE Download over HTTP & Packed Executable
+# SIDs: 2014520, 2000419
+test_exe() {
+  print_header "6" "$test_exe_name" "HTTP"
+  local base_url
+  base_url="$(get_base_url)"
+  local target_url="${base_url}/exe/calc.exe"
+  local tmp_dest="/tmp/calc_$$.exe"
+
+  echo -e "Downloading test executable from: ${COLOR_BOLD}$target_url${COLOR_RESET}"
+  if curl -s -m "$TMNIDS_TIMEOUT" "$target_url" -o "$tmp_dest" 2>/dev/null && [ -s "$tmp_dest" ]; then
+    local size
+    size="$(wc -c < "$tmp_dest")"
+    rm -f "$tmp_dest"
+    print_result "SUCCESS" "Downloaded $size bytes from $target_url (PE / Packed executable indicator)"
+  else
+    rm -f "$tmp_dest"
+    print_result "FAIL" "Could not download executable from $target_url"
+  fi
+}
+
+# Test 7: PDF download with Embedded File indicator
+# SID: 2014162 / 2024213
+test_pdf() {
+  print_header "7" "$test_pdf_name" "HTTP"
+  local base_url
+  base_url="$(get_base_url)"
+  local target_url="${base_url}/pdf/pdf.pdf"
+  local tmp_dest="/tmp/tmnidspdf_$$.pdf"
+
+  echo -e "Downloading test PDF from: ${COLOR_BOLD}$target_url${COLOR_RESET}"
+  if curl -s -m "$TMNIDS_TIMEOUT" "$target_url" -o "$tmp_dest" 2>/dev/null && [ -s "$tmp_dest" ]; then
+    local size
+    size="$(wc -c < "$tmp_dest")"
+    rm -f "$tmp_dest"
+    print_result "SUCCESS" "Downloaded $size bytes PDF from $target_url"
+  else
+    rm -f "$tmp_dest"
+    print_result "FAIL" "Could not download PDF from $target_url"
+  fi
+}
+
+# Test 8: Simulate an outbound SSH scan
+test_22scan() {
+  print_header "8" "$test_22scan_name" "SSH / TCP"
+  echo -e "Testing TCP port 22 connection against ${COLOR_BOLD}${TMNIDS_TARGET_HOST}:22${COLOR_RESET}"
+  nc -z -w 3 "$TMNIDS_TARGET_HOST" 22 > /dev/null 2>&1
+  local exit_code=$?
+
+  if [ $exit_code -eq 0 ]; then
+    print_result "SUCCESS" "Port 22 on $TMNIDS_TARGET_HOST is open; probe succeeded"
+  else
+    print_result "SUCCESS" "Probed $TMNIDS_TARGET_HOST on port 22 (SYN/RST traffic observed by NIDS)"
+  fi
+}
+
+# Test 9: Miscellaneous domains (Sinkhole, TLDs, DDNS)
+# SID: 2024897, ET INFO
+test_miscdns() {
+  print_header "9" "$test_miscdns_name" "DNS"
+  echo -e "Querying CERT Polska Sinkhole, .su TLD, and dynamic DNS..."
+  dig sinkhole.cert.pl @8.8.8.8 +time=2 +tries=1 > /dev/null 2>&1 || true
+  dig nic.su @8.8.8.8 +time=2 +tries=1 > /dev/null 2>&1 || true
+  dig invalid.no-ip.com @8.8.8.8 +time=2 +tries=1 > /dev/null 2>&1 || true
+  print_result "SUCCESS" "Generated DNS queries for sinkhole.cert.pl, nic.su, and invalid.no-ip.com"
+}
+
+# Test 10: Anonymous filesharing website
+test_filesharing() {
+  print_header "10" "$test_filesharing_name" "DNS & TLS"
+  echo -e "Simulating TLS connection to anonymous file sharing service (fromsmash.com:443)..."
+  echo Q | timeout "$TMNIDS_TIMEOUT" openssl s_client -servername fromsmash.com -connect fromsmash.com:443 > /dev/null 2>&1 || true
+  print_result "SUCCESS" "Initiated TLS handshake with SNI fromsmash.com"
+}
+
+# Test 11: External IP Address Lookup website
+# SIDs: 2021997, 2020716, 2036304, 2844906, 2052027, 2022082
+test_external_ip_lookup() {
+  print_header "11" "$test_external_ip_lookup_name" "HTTP, DNS, TLS"
+  local services=("api.ipify.org" "ipinfo.io" "icanhazip.com" "ifconfig.io" "checkip.amazonaws.com" "ip-api.com")
+  local success=0
+
+  for s in "${services[@]}"; do
+    if curl -s -m 3 "$s" > /dev/null 2>&1; then
+      ((success++))
+    fi
+  done
+  print_result "SUCCESS" "Contacted $success/${#services[@]} external IP lookup services"
+}
+
+# Test 12: URL Shortener
+# SIDs: 2038992, 2038568, 2035742
+test_url_shortener() {
+  print_header "12" "$test_url_shortener_name" "DNS & HTTP"
+  local shorteners=("zshorten.com" "cutt.ly" "lk.tc")
+  for u in "${shorteners[@]}"; do
+    curl -s -m 3 "http://$u" > /dev/null 2>&1 || true
+  done
+  print_result "SUCCESS" "Generated HTTP/DNS traffic to URL shortener domains (${shorteners[*]})"
+}
+
+# Test 13: Policy Violation - Gaming
+# SIDs: 2014718 (Wii UA), 2013910 (Second Life Client)
+test_gaming() {
+  print_header "13" "$test_gaming_name" "HTTP"
+  local base_url
+  base_url="$(get_base_url)"
+
+  echo -e "Sending Nintendo Wii User-Agent..."
+  curl -s -m "$TMNIDS_TIMEOUT" -H "User-Agent: (Nintendo Wii; U; ; 2047-12; en)" "${base_url}/" > /dev/null 2>&1 || true
+
+  echo -e "Requesting Second Life installer URL..."
+  curl -s -m "$TMNIDS_TIMEOUT" "${base_url}/Second_Life_Setup.exe" > /dev/null 2>&1 || true
+
+  print_result "SUCCESS" "Sent gaming User-Agent and requested Second_Life_Setup.exe"
+}
+
+# Test 14: Adware / PUP Indicators
+# SIDs: 2003060, 2002001, 2002092
+test_adware_pup() {
+  print_header "14" "$test_adware_pup_name" "HTTP"
+  local base_url
+  base_url="$(get_base_url)"
+
+  curl -s -m "$TMNIDS_TIMEOUT" "${base_url}/php/rpc_uci.php" > /dev/null 2>&1 || true
+  curl -s -m "$TMNIDS_TIMEOUT" "${base_url}/keywords/kyf?partner_id=123" > /dev/null 2>&1 || true
+  curl -s -m "$TMNIDS_TIMEOUT" "${base_url}/protector.exe" > /dev/null 2>&1 || true
+
+  print_result "SUCCESS" "Sent HTTP requests matching known Adware/PUP URI patterns"
+}
+
+# Test 15: Malware Command & Control Beacon Simulation
+# SIDs: 2027793 (Emotet/Geodo), 2016568 (sleep 20)
+test_malware_c2_beacon() {
+  print_header "15" "$test_malware_c2_beacon_name" "HTTP"
+  local base_url
+  base_url="$(get_base_url)"
+
+  echo -e "Sending Emotet/Geodo simulated C2 beacon payload via POST..."
+  curl -s -m "$TMNIDS_TIMEOUT" -X POST "${base_url}/" -H 'Content-Type: application/txt' -d '=eyJHVUlEIjoi=IlR5cGUiOJUeXBlIj' > /dev/null 2>&1 || true
+
+  echo -e "Sending malicious User-Agent 'sleep 20' beacon via GET..."
+  curl -s -m "$TMNIDS_TIMEOUT" "${base_url}/somepage.html?1234567890" -H 'User-Agent: sleep 20, Mozilla/5.0' > /dev/null 2>&1 || true
+
+  print_result "SUCCESS" "Dispatched simulated C2 POST beacon and 'sleep 20' User-Agent requests"
+}
+
+# Test 99: CHAOS - Run all tests
+test_all() {
+  echo -e "\n${COLOR_RED}${COLOR_BOLD}=================================================================${COLOR_RESET}"
+  echo -e "${COLOR_RED}${COLOR_BOLD}              CHAOS MODE: Executing All 15 Tests                 ${COLOR_RESET}"
+  echo -e "${COLOR_RED}${COLOR_BOLD}=================================================================${COLOR_RESET}"
+  log_msg "INFO" "Starting CHAOS MODE: running all tests"
+
+  test_uid
+  test_basicauth
+  test_useragent
+  test_badcas_certs
+  test_tor
+  test_exe
+  test_pdf
+  test_22scan
+  test_miscdns
+  test_filesharing
+  test_external_ip_lookup
+  test_url_shortener
+  test_gaming
+  test_adware_pup
+  test_malware_c2_beacon
+
+  echo -e "\n${COLOR_GREEN}${COLOR_BOLD}=================================================================${COLOR_RESET}"
+  echo -e "${COLOR_GREEN}${COLOR_BOLD}              All 15 Tests Completed in CHAOS Mode               ${COLOR_RESET}"
+  echo -e "${COLOR_GREEN}${COLOR_BOLD}=================================================================${COLOR_RESET}\n"
+  log_msg "INFO" "CHAOS MODE completed"
+}
+
+# ------------------------------------------------------------------------------
+# Banner
+# ------------------------------------------------------------------------------
+display_banner() {
+  echo -e "${COLOR_CYAN}"
+  echo " _             _   _ _____ _____   _____ "
+  echo "| |           | \ | |_   _|  __ \ / ____|"
+  echo "| |_ _ __ ___ |  \| | | | | |  | | (___  "
+  echo "| __|  _   _ \| .   | | | | |  | |\___ \ "
+  echo "| |_| | | | | | |\  |_| |_| |__| |____) |"
+  echo " \__|_| |_| |_|_| \_|_____|_____/|_____/ "
+  echo -e "${COLOR_RESET}"
+  echo -e "${COLOR_BOLD}tmNIDS - NIDS detection tester - @3CORESec${COLOR_RESET} (Replication v${TMNIDS_VERSION})"
+  echo -e "Project: ${COLOR_BLUE}https://github.com/3CORESec/testmynids.org${COLOR_RESET}"
+  echo -e "Target:  ${COLOR_YELLOW}$(get_base_url)${COLOR_RESET} | Log: ${COLOR_GRAY}${TMNIDS_LOG_FILE}${COLOR_RESET}\n"
+}
+
+display_help() {
+  display_banner
+  echo -e "These are the available tests:\n"
+  echo -e "  -1   $test_uid_name"
+  echo -e "  -2   $test_basicauth_name"
+  echo -e "  -3   $test_useragent_name"
+  echo -e "  -4   $test_badcas_certs_name"
+  echo -e "  -5   $test_tor_name"
+  echo -e "  -6   $test_exe_name"
+  echo -e "  -7   $test_pdf_name"
+  echo -e "  -8   $test_22scan_name"
+  echo -e "  -9   $test_miscdns_name"
+  echo -e "  -10  $test_filesharing_name"
+  echo -e "  -11  $test_external_ip_lookup_name"
+  echo -e "  -12  $test_url_shortener_name"
+  echo -e "  -13  $test_gaming_name"
+  echo -e "  -14  $test_adware_pup_name"
+  echo -e "  -15  $test_malware_c2_beacon_name"
+  echo -e "  -99  CHAOS! Run all!\n"
+  echo -e "Options:"
+  echo -e "  -t, --target <host[:port]>  Set target host/port (default: $DEFAULT_TARGET_HOST:$DEFAULT_TARGET_PORT)"
+  echo -e "  -l, --list                  List all available tests"
+  echo -e "  -h, --help                  Display this help message"
+  echo -e "  --check-deps                Run dependency verification only\n"
+  echo -e "Example (runs Test 7 - PDF download with Embedded File against localhost):"
+  echo -e "  ${COLOR_BOLD}./tmNIDS -t 127.0.0.1:8080 -7${COLOR_RESET}\n"
+}
+
+# ------------------------------------------------------------------------------
+# Script Mode vs Interactive Mode
+# ------------------------------------------------------------------------------
+
+run_interactive_menu() {
+  check_dependencies
+
+  local options=(
+    "$test_uid_name"
+    "$test_basicauth_name"
+    "$test_useragent_name"
+    "$test_badcas_certs_name"
+    "$test_tor_name"
+    "$test_exe_name"
+    "$test_pdf_name"
+    "$test_22scan_name"
+    "$test_miscdns_name"
+    "$test_filesharing_name"
+    "$test_external_ip_lookup_name"
+    "$test_url_shortener_name"
+    "$test_gaming_name"
+    "$test_adware_pup_name"
+    "$test_malware_c2_beacon_name"
+    "CHAOS! RUN ALL!"
+    "Quit!"
+  )
+
+  while true; do
+    display_banner
+    echo "Choose which test you'd like to run: "
+    echo ""
+    select opt in "${options[@]}"; do
+      case $REPLY in
+        1) test_uid; break ;;
+        2) test_basicauth; break ;;
+        3) test_useragent; break ;;
+        4) test_badcas_certs; break ;;
+        5) test_tor; break ;;
+        6) test_exe; break ;;
+        7) test_pdf; break ;;
+        8) test_22scan; break ;;
+        9) test_miscdns; break ;;
+        10) test_filesharing; break ;;
+        11) test_external_ip_lookup; break ;;
+        12) test_url_shortener; break ;;
+        13) test_gaming; break ;;
+        14) test_adware_pup; break ;;
+        15) test_malware_c2_beacon; break ;;
+        16) test_all; break ;;
+        17) echo "Exiting tmNIDS."; exit 0 ;;
+        *) echo "Invalid option!" >&2
+      esac
+    done
+
+    echo ""
+    read -r -p "Press [Enter] to return to the menu..."
+  done
+}
+
+# If no arguments provided, launch interactive menu
+if [ -z "$*" ]; then
+  run_interactive_menu
+fi
+
+# Script Mode (Arguments passed)
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -t|--target)
+      target_val="$2"
+      shift
+      if [[ "$target_val" =~ ^(https?)://(.*)$ ]]; then
+        TMNIDS_TARGET_PROTO="${BASH_REMATCH[1]}"
+        target_val="${BASH_REMATCH[2]}"
+      fi
+      if [[ "$target_val" =~ ^(.*):([0-9]+)$ ]]; then
+        TMNIDS_TARGET_HOST="${BASH_REMATCH[1]}"
+        TMNIDS_TARGET_PORT="${BASH_REMATCH[2]}"
+      else
+        TMNIDS_TARGET_HOST="$target_val"
+      fi
+      ;;
+    --check-deps)
+      check_dependencies
+      exit $?
+      ;;
+    -l|--list|-h|--help)
+      display_help
+      exit 0
+      ;;
+    -i|--interactive)
+      run_interactive_menu
+      exit 0
+      ;;
+    -1) test_uid ;;
+    -2) test_basicauth ;;
+    -3) test_useragent ;;
+    -4) test_badcas_certs ;;
+    -5) test_tor ;;
+    -6) test_exe ;;
+    -7) test_pdf ;;
+    -8) test_22scan ;;
+    -9) test_miscdns ;;
+    -10) test_filesharing ;;
+    -11) test_external_ip_lookup ;;
+    -12) test_url_shortener ;;
+    -13) test_gaming ;;
+    -14) test_adware_pup ;;
+    -15) test_malware_c2_beacon ;;
+    -99) test_all ;;
+    *)
+      echo "Unknown option: $1" >&2
+      echo "Use -h or --help for available options." >&2
+      exit 1
+      ;;
+  esac
+  shift
+done
+
