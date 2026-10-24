@@ -1,0 +1,28 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Temporary test downloads and run artifacts
+/tmp/
+*.tmp
+*.log
+tmnidspdf.pdf
+calc.exe
+tor.list
+randomtor.list
+*.swp
+
+# Suricata log outputs
+eve.json
+fast.log
+suricata.log
+stats.log
+*.pcap
+*.pcapng
+
+# OS / Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
