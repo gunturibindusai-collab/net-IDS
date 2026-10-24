@@ -177,6 +177,33 @@ Generating network activity merely verifies that packets left the sender. Detect
 2. Checksum offloading does not cause the IDS packet capture driver to drop packets (`checksum-validation: no` in `suricata.yaml`).
 3. Application payload visibility: For encrypted TLS traffic, the NIDS can inspect Server Name Indication (SNI) and certificate subjects during the handshake, but application payloads remain opaque unless TLS termination / proxying is deployed.
 
+### Multi-Interface Lab Architecture
+In WSL2 / Linux environments, network traffic traverses two distinct interfaces:
+1. **Loopback (`lo`)**: Handles all traffic directed to the local test resource server (`127.0.0.1:8080`), including UID output, Basic Auth headers, malware User-Agents, PE/UPX downloads, PDF downloads, and C2 beacons.
+2. **Egress Interface (`eth0`)**: Handles external DNS lookups (e.g. `dig @8.8.8.8`) and external TLS handshakes (e.g. `badssl.com`, `fromsmash.com`, `api.ipify.org`).
+
+The lab test script (`nids/run_lab_test.sh`) automatically provisions Suricata in **`autofp` multi-interface mode** monitoring both `lo` and `eth0` concurrently, ensuring complete visibility across all local and egress traffic.
+
+### Test Environment Categorization & Limitations
+
+| Test Category | Target / Scope | Offline / Air-Gapped Capable? | Notes & Detection Mechanism |
+|---|---|:---:|---|
+| **Test 1: Linux UID** | Local (`/uid/index.html`) | **Yes** | Server responds with `uid=0(root)`; triggers SID 2100498. |
+| **Test 2: Basic Auth** | Local (`/`) | **Yes** | Request header `Authorization: Basic cm9vdDpyb290`; triggers SID 2003195. |
+| **Test 3: User-Agents** | Local (`/`) | **Yes** | Dispatches BlackSun, HttpDownload, agent, MSIE, JEDI-VCL; triggers 5 SIDs. |
+| **Test 4: Bad CAs & Certs** | Hybrid (`badssl.com` + Local) | **Yes** (Local cert) | Probes badssl endpoints and downloads local OWASP ZAP test certificate (SID 2021941). |
+| **Test 5: Tor Activity** | External (DNS + Relay list) | No (Requires Internet) | Queries `3wzn5p2yiumh7akj.onion` via DNS; triggers SID 2020001. |
+| **Test 6: EXE / UPX** | Local (`/exe/calc.exe`) | **Yes** | Downloads harmless PE stub with `UPX0`/`UPX1` headers; triggers SIDs 2014520, 2000419. |
+| **Test 7: PDF Embedded File**| Local (`/pdf/pdf.pdf`) | **Yes** | Downloads valid PDF with `/EmbeddedFiles` structure; triggers SID 2014162. |
+| **Test 8: SSH Outbound Scan**| Local (`127.0.0.1:22`) | **Yes** | Probes TCP port 22 with SYN flag; triggers SID 2001219. |
+| **Test 9: Misc DNS** | External (DNS sinkholes) | No (Requires Internet) | Queries `sinkhole.cert.pl` (SID 2024897), `.su` TLD (SID 2010002), `no-ip.com`. |
+| **Test 10: Anonymous Sharing**| External (`fromsmash.com:443`) | No (Requires Internet) | TLS ClientHello with SNI `fromsmash.com`; triggers SID 2010010. |
+| **Test 11: External IP Lookup**| External (`ipify.org`, etc.) | No (Requires Internet) | DNS and HTTP GET to `api.ipify.org`; triggers SIDs 2021997, 2047702. |
+| **Test 12: URL Shortener** | External (`cutt.ly`, etc.) | No (Requires Internet) | DNS and HTTP GET to `cutt.ly`, `zshorten.com`; triggers SIDs 2038568, 2038569. |
+| **Test 13: Gaming Policy** | Local (`/Second_Life_Setup.exe`) | **Yes** | Wii User-Agent and Second Life installer download; triggers SIDs 2014718, 2013910. |
+| **Test 14: Adware / PUP** | Local (`/php/rpc_uci.php`, etc.)| **Yes** | Queries known adware URI paths; triggers SIDs 2003060, 2002001, 2002092. |
+| **Test 15: Malware C2 Beacon**| Local (`/`) | **Yes** | Simulated Emotet POST body and `sleep 20` User-Agent; triggers SIDs 2027793, 2016568. |
+
 ### Single-Command Lab Execution & Verification
 To start the test server, launch Suricata, execute all tests, and verify detections automatically:
 ```bash
@@ -189,25 +216,50 @@ Or test a single specific test case:
 sudo ./nids/run_lab_test.sh -1
 ```
 
-### Sample Verification Report Output
+### Actual Lab Verification Results (Suricata 8.0.3)
 ```text
 ================================================================================
        TestMyNIDS Detection Verification Report (Suricata NIDS)
 ================================================================================
-Log Source Evaluated: nids/logs/eve.json
-Overall Detection Score: 1/1 tests (100.0%)
+Log Source Evaluated: /mnt/c/Users/LENOVO/OneDrive/Desktop/net-ids/nids/logs/eve.json
+Overall Detection Score: 15/15 tests (100.0%)
 
 ID   | Test Name                        | Protocol   | Status         | Alerts
 --------------------------------------------------------------------------------
 #1   | Linux UID                        | HTTP       | [+] DETECTED   | 1     
+#2   | HTTP Basic Authentication        | HTTP       | [+] DETECTED   | 1     
+#3   | HTTP Malware User-Agent          | HTTP       | [+] DETECTED   | 5     
+#4   | Bad Certificates & CAs           | TLS / HTTP | [+] DETECTED   | 3     
+#5   | Tor .onion & Relay Nodes         | DNS & TLS  | [+] DETECTED   | 1     
+#6   | EXE or DLL Download & Packed PE  | HTTP       | [+] DETECTED   | 6     
+#7   | PDF Download with Embedded File  | HTTP       | [+] DETECTED   | 1     
+#8   | Simulate SSH Outbound Scan       | SSH / TCP  | [+] DETECTED   | 1     
+#9   | Miscellaneous Domains            | DNS        | [+] DETECTED   | 3     
+#10  | Anonymous Filesharing Website    | TLS        | [+] DETECTED   | 1     
+#11  | External IP Address Lookup       | DNS / HTTP | [+] DETECTED   | 5     
+#12  | URL Shortener Domains            | DNS / HTTP | [+] DETECTED   | 4     
+#13  | Policy Violation - Gaming        | HTTP       | [+] DETECTED   | 2     
+#14  | Adware PUP Indicators            | HTTP       | [+] DETECTED   | 3     
+#15  | Malware C2 Beacon                | HTTP       | [+] DETECTED   | 2     
 --------------------------------------------------------------------------------
 
 --- Signature & Detection Details ---
 
-[+] Test 1: Linux UID
-    Expected SIDs: [2100498]
-    Triggered Alerts (1):
-      * GPL ATTACK_RESPONSE id check returned root
+[+] Test 1: Linux UID (SID: 2100498) -> GPL ATTACK_RESPONSE id check returned root
+[+] Test 2: HTTP Basic Authentication (SID: 2003195) -> ET POLICY Cleartext Basic Auth with root credentials
+[+] Test 3: HTTP Malware User-Agent -> 5 alerts: BlackSun, HttpDownload, agent, MSIE, JEDI-VCL
+[+] Test 4: Bad Certificates & CAs -> eDellRoot (2022134), Superfish (2020493), OWASP ZAP (2021941)
+[+] Test 5: Tor .onion & Relay Nodes (SID: 2020001) -> ET TOR .onion DNS query lookup
+[+] Test 6: EXE Download & Packed PE -> PE EXE download (2014520) & UPX Packed PE (2000419)
+[+] Test 7: PDF Download with Embedded File (SID: 2014162) -> ET POLICY PDF With Embedded File
+[+] Test 8: Simulate SSH Outbound Scan (SID: 2001219) -> ET SCAN Potential Outbound SSH Scan
+[+] Test 9: Miscellaneous Domains -> CERT Polska Sinkhole (2024897), .su TLD, no-ip.com
+[+] Test 10: Anonymous Filesharing Website (SID: 2010010) -> fromsmash.com TLS SNI
+[+] Test 11: External IP Address Lookup -> ipify.org DNS (2021997) & HTTP (2047702), ipinfo.io, icanhazip
+[+] Test 12: URL Shortener Domains -> cutt.ly DNS (2038568), cutt.ly HTTP (2038569), zshorten.com HTTP
+[+] Test 13: Policy Violation - Gaming -> Nintendo Wii UA (2014718) & Second Life download (2013910)
+[+] Test 14: Adware PUP Indicators -> rpc_uci.php (2003060), keywords/kyf (2002001), protector.exe (2002092)
+[+] Test 15: Malware C2 Beacon -> Emotet/Geodo Beacon (2027793) & sleep 20 UA (2016568)
 ================================================================================
 ```
 

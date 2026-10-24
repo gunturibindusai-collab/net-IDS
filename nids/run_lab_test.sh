@@ -47,13 +47,20 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # 2. Start Suricata NIDS
-echo -e "${COLOR_CYAN}[2/5] Starting Suricata NIDS on interface '$INTERFACE'...${COLOR_RESET}"
+CAPTURE_OPTS=(--af-packet)
+if [ -n "$SURICATA_IFACE" ]; then
+  CAPTURE_OPTS=(-i "$SURICATA_IFACE")
+  echo -e "${COLOR_CYAN}[2/5] Starting Suricata NIDS on interface '$SURICATA_IFACE'...${COLOR_RESET}"
+else
+  echo -e "${COLOR_CYAN}[2/5] Starting Suricata NIDS on multi-interface af-packet (lo + eth0)...${COLOR_RESET}"
+fi
+
 suricata \
   -c "$SCRIPT_DIR/suricata.yaml" \
   -s "$SCRIPT_DIR/rules/tmnids.rules" \
-  -i "$INTERFACE" \
+  "${CAPTURE_OPTS[@]}" \
   -l "$LAB_DIR" \
-  --runmode single > "$LAB_DIR/suricata.log" 2>&1 &
+  --runmode autofp > "$LAB_DIR/suricata.log" 2>&1 &
 SURICATA_PID=$!
 
 # Wait for Suricata engine initialization

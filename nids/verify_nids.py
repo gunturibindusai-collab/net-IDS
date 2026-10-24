@@ -90,14 +90,14 @@ TEST_SIGNATURE_MAP = {
     11: {
         "name": "External IP Address Lookup",
         "protocol": "DNS / HTTP",
-        "expected_sids": [2021997, 2020716, 2036304, 2844906, 2052027, 2022082],
+        "expected_sids": [2021997, 2047702, 2025331, 2017398, 2020716, 2036304, 2844906, 2052027, 2022082],
         "category": "POLICY",
         "notes": "Triggers on lookups to ipify, ipinfo, icanhazip",
     },
     12: {
         "name": "URL Shortener Domains",
         "protocol": "DNS / HTTP",
-        "expected_sids": [2038568, 2038992, 2035742],
+        "expected_sids": [2038568, 2038569, 2038992, 2035742],
         "category": "POLICY",
         "notes": "Triggers on zshorten, cutt.ly, lk.tc lookups",
     },

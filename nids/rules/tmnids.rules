@@ -32,7 +32,7 @@ alert http any any -> any any (msg:"ET WEB_CLIENT Proxy - OWASP Zed Attack Proxy
 # ------------------------------------------------------------------------------
 # Test 5: Tor .onion DNS response & Connections
 # ------------------------------------------------------------------------------
-alert dns any any -> any any (msg:"ET TOR .onion DNS query lookup"; dns.query; content:".onion"; classtype:policy-violation; sid:2020001; rev:1;)
+alert dns any any -> any any (msg:"ET TOR .onion DNS query lookup"; dns.query; content:"onion"; classtype:policy-violation; sid:2020001; rev:1;)
 
 # ------------------------------------------------------------------------------
 # Test 6: EXE Download over HTTP & Packed Executable
@@ -66,14 +66,16 @@ alert tls any any -> any any (msg:"ET POLICY Anonymous File Sharing Domain Obser
 # Test 11: External IP Address Lookup
 # ------------------------------------------------------------------------------
 alert dns any any -> any any (msg:"ET POLICY External IP Address Lookup (ipify.org)"; dns.query; content:"ipify.org"; classtype:policy-violation; sid:2021997; rev:1;)
-alert dns any any -> any any (msg:"ET POLICY External IP Address Lookup (ipinfo.io)"; dns.query; content:"ipinfo.io"; classtype:policy-violation; sid:2020716; rev:1;)
-alert dns any any -> any any (msg:"ET POLICY External IP Address Lookup (icanhazip.com)"; dns.query; content:"icanhazip.com"; classtype:policy-violation; sid:2036304; rev:1;)
+alert http any any -> any any (msg:"ET POLICY External IP Address Lookup HTTP (ipify.org)"; http.host; content:"ipify.org"; classtype:policy-violation; sid:2047702; rev:1;)
+alert http any any -> any any (msg:"ET POLICY External IP Address Lookup HTTP (ipinfo.io)"; http.host; content:"ipinfo.io"; classtype:policy-violation; sid:2025331; rev:1;)
+alert http any any -> any any (msg:"ET POLICY External IP Address Lookup HTTP (icanhazip.com)"; http.host; content:"icanhazip.com"; classtype:policy-violation; sid:2017398; rev:1;)
 
 # ------------------------------------------------------------------------------
 # Test 12: URL Shortener
 # ------------------------------------------------------------------------------
 alert dns any any -> any any (msg:"ET POLICY URL Shortener Domain Lookup"; dns.query; content:"cutt.ly"; classtype:policy-violation; sid:2038568; rev:1;)
-alert dns any any -> any any (msg:"ET POLICY URL Shortener Domain Lookup"; dns.query; content:"zshorten.com"; classtype:policy-violation; sid:2038992; rev:1;)
+alert http any any -> any any (msg:"ET POLICY URL Shortener HTTP Request (cutt.ly)"; http.host; content:"cutt.ly"; classtype:policy-violation; sid:2038569; rev:1;)
+alert http any any -> any any (msg:"ET POLICY URL Shortener HTTP Request (zshorten.com)"; http.host; content:"zshorten.com"; classtype:policy-violation; sid:2038992; rev:1;)
 
 # ------------------------------------------------------------------------------
 # Test 13: Policy Violation - Gaming

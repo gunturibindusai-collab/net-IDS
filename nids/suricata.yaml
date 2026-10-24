@@ -33,6 +33,19 @@ outputs:
         - tls:
             extended: yes
 
+# AF_PACKET multi-interface capture (monitors both local lab on lo and external tests on eth0)
+af-packet:
+  - interface: lo
+    cluster-id: 99
+    cluster-type: cluster_flow
+    defrag: yes
+    use-mmsg: yes
+  - interface: eth0
+    cluster-id: 98
+    cluster-type: cluster_flow
+    defrag: yes
+    use-mmsg: yes
+
 # Stream and TCP reassembly
 stream:
   memcap: 67108864
