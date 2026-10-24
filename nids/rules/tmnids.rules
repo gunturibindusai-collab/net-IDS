@@ -1,0 +1,95 @@
+# ==============================================================================
+# TestMyNIDS Emerging Threats / Snort Ruleset
+# Aligned with test categories in tmNIDS (https://github.com/3CORESec/testmynids.org)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Test 1: Linux UID (SID: 2100498)
+# ------------------------------------------------------------------------------
+alert http any any -> any any (msg:"GPL ATTACK_RESPONSE id check returned root"; file_data; content:"uid=0|28|root|29|"; classtype:bad-unknown; sid:2100498; rev:7;)
+
+# ------------------------------------------------------------------------------
+# Test 2: Basic Authentication over Cleartext (SID: 2003195)
+# ------------------------------------------------------------------------------
+alert http any any -> any any (msg:"ET POLICY Cleartext Basic Auth with root credentials"; http.header; content:"Authorization|3a 20|Basic cm9vdDpyb290"; classtype:policy-violation; sid:2003195; rev:3;)
+
+# ------------------------------------------------------------------------------
+# Test 3: Suspicious Malware User-Agents
+# ------------------------------------------------------------------------------
+alert http any any -> any any (msg:"ET MALWARE Suspicious User-Agent (BlackSun)"; http.user_agent; content:"BlackSun"; classtype:trojan-activity; sid:2008983; rev:5;)
+alert http any any -> any any (msg:"ET MALWARE Suspicious User-Agent (HttpDownload)"; http.user_agent; content:"HttpDownload"; classtype:trojan-activity; sid:2003158; rev:4;)
+alert http any any -> any any (msg:"ET MALWARE Suspicious User-Agent (agent)"; http.user_agent; content:"agent"; classtype:trojan-activity; sid:2003056; rev:3;)
+alert http any any -> any any (msg:"ET MALWARE Suspicious User-Agent (MSIE)"; http.user_agent; content:"MSIE"; classtype:trojan-activity; sid:2001001; rev:1;)
+alert http any any -> any any (msg:"ET MALWARE Suspicious User-Agent (JEDI-VCL)"; http.user_agent; content:"JEDI-VCL"; classtype:trojan-activity; sid:2006380; rev:4;)
+
+# ------------------------------------------------------------------------------
+# Test 4: Bad CAs & Known Bad Certificates
+# ------------------------------------------------------------------------------
+alert tls any any -> any any (msg:"ET POLICY Suspicious eDellRoot CA Certificate Observed"; tls.sni; content:"edellroot.badssl.com"; classtype:policy-violation; sid:2022134; rev:2;)
+alert tls any any -> any any (msg:"ET POLICY Suspicious Superfish CA Certificate Observed"; tls.sni; content:"superfish.badssl.com"; classtype:policy-violation; sid:2020493; rev:2;)
+alert http any any -> any any (msg:"ET WEB_CLIENT Proxy - OWASP Zed Attack Proxy Certificate Seen"; file_data; content:"OWASP Zed Attack Proxy Root CA"; classtype:misc-activity; sid:2021941; rev:1;)
+
+# ------------------------------------------------------------------------------
+# Test 5: Tor .onion DNS response & Connections
+# ------------------------------------------------------------------------------
+alert dns any any -> any any (msg:"ET TOR .onion DNS query lookup"; dns.query; content:".onion"; classtype:policy-violation; sid:2020001; rev:1;)
+
+# ------------------------------------------------------------------------------
+# Test 6: EXE Download over HTTP & Packed Executable
+# ------------------------------------------------------------------------------
+alert http any any -> any any (msg:"ET POLICY PE EXE or DLL Windows file download HTTP"; http.uri; content:".exe"; classtype:policy-violation; sid:2014520; rev:3;)
+alert http any any -> any any (msg:"ET POLICY Packed Executable Download UPX"; file_data; content:"UPX"; classtype:policy-violation; sid:2000419; rev:4;)
+
+# ------------------------------------------------------------------------------
+# Test 7: PDF Download with Embedded File
+# ------------------------------------------------------------------------------
+alert tcp any any -> any any (msg:"ET POLICY PDF With Embedded File"; content:"/EmbeddedFiles"; nocase; classtype:policy-violation; sid:2014162; rev:2;)
+
+# ------------------------------------------------------------------------------
+# Test 8: Simulate Outbound SSH Scan
+# ------------------------------------------------------------------------------
+alert tcp any any -> any [22,2222] (msg:"ET SCAN Potential Outbound SSH Scan"; flags:S; classtype:attempted-recon; sid:2001219; rev:2;)
+
+# ------------------------------------------------------------------------------
+# Test 9: Miscellaneous Domains (Sinkhole, TLD, DDNS)
+# ------------------------------------------------------------------------------
+alert dns any any -> any any (msg:"ET DNS Query to CERT Polska Sinkhole"; dns.query; content:"sinkhole.cert.pl"; classtype:trojan-activity; sid:2024897; rev:1;)
+alert dns any any -> any any (msg:"ET INFO DNS Query for .su Top Level Domain"; dns.query; content:".su"; classtype:misc-activity; sid:2010002; rev:1;)
+alert dns any any -> any any (msg:"ET POLICY Dynamic DNS Domain Query (no-ip.com)"; dns.query; content:"no-ip.com"; classtype:policy-violation; sid:2010003; rev:1;)
+
+# ------------------------------------------------------------------------------
+# Test 10: Anonymous File Sharing
+# ------------------------------------------------------------------------------
+alert tls any any -> any any (msg:"ET POLICY Anonymous File Sharing Domain Observed (fromsmash.com)"; tls.sni; content:"fromsmash.com"; classtype:policy-violation; sid:2010010; rev:1;)
+
+# ------------------------------------------------------------------------------
+# Test 11: External IP Address Lookup
+# ------------------------------------------------------------------------------
+alert dns any any -> any any (msg:"ET POLICY External IP Address Lookup (ipify.org)"; dns.query; content:"ipify.org"; classtype:policy-violation; sid:2021997; rev:1;)
+alert dns any any -> any any (msg:"ET POLICY External IP Address Lookup (ipinfo.io)"; dns.query; content:"ipinfo.io"; classtype:policy-violation; sid:2020716; rev:1;)
+alert dns any any -> any any (msg:"ET POLICY External IP Address Lookup (icanhazip.com)"; dns.query; content:"icanhazip.com"; classtype:policy-violation; sid:2036304; rev:1;)
+
+# ------------------------------------------------------------------------------
+# Test 12: URL Shortener
+# ------------------------------------------------------------------------------
+alert dns any any -> any any (msg:"ET POLICY URL Shortener Domain Lookup"; dns.query; content:"cutt.ly"; classtype:policy-violation; sid:2038568; rev:1;)
+alert dns any any -> any any (msg:"ET POLICY URL Shortener Domain Lookup"; dns.query; content:"zshorten.com"; classtype:policy-violation; sid:2038992; rev:1;)
+
+# ------------------------------------------------------------------------------
+# Test 13: Policy Violation - Gaming
+# ------------------------------------------------------------------------------
+alert http any any -> any any (msg:"ET POLICY Nintendo Wii User-Agent Observed"; http.user_agent; content:"Nintendo Wii"; nocase; classtype:policy-violation; sid:2014718; rev:2;)
+alert http any any -> any any (msg:"ET POLICY Second Life Client Download"; http.uri; content:"Second_Life_Setup.exe"; nocase; classtype:policy-violation; sid:2013910; rev:2;)
+
+# ------------------------------------------------------------------------------
+# Test 14: Adware / PUP Indicators
+# ------------------------------------------------------------------------------
+alert http any any -> any any (msg:"ET ADWARE_PUP Suspicious Adware Activity (rpc_uci.php)"; http.uri; content:"rpc_uci.php"; nocase; classtype:adware-pup; sid:2003060; rev:2;)
+alert http any any -> any any (msg:"ET ADWARE_PUP 180search Assistant Keyword Request"; http.uri; content:"keywords/kyf"; nocase; classtype:adware-pup; sid:2002001; rev:2;)
+alert http any any -> any any (msg:"ET ADWARE_PUP Win32/ShopperReports Component Download"; http.uri; content:"protector.exe"; nocase; classtype:adware-pup; sid:2002092; rev:2;)
+
+# ------------------------------------------------------------------------------
+# Test 15: Malware Command & Control Beacon
+# ------------------------------------------------------------------------------
+alert tcp any any -> any any (msg:"ET TROJAN Win32/Emotet/Geodo Beacon Outbound"; content:"=eyJHVUlEIjoi=IlR5cGUiOJUeXBlIj"; classtype:trojan-activity; sid:2027793; rev:1;)
+alert http any any -> any any (msg:"ET TROJAN Observed Malicious User-Agent (sleep 20)"; http.user_agent; content:"sleep 20"; nocase; classtype:trojan-activity; sid:2016568; rev:1;)

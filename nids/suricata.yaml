@@ -1,0 +1,64 @@
+%YAML 1.1
+---
+# Suricata Configuration for TestMyNIDS Lab Verification
+
+default-log-dir: ./logs
+
+stats:
+  enabled: yes
+  interval: 8
+
+outputs:
+  - fast:
+      enabled: yes
+      filename: fast.log
+      append: yes
+
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: eve.json
+      types:
+        - alert:
+            payload: yes
+            payload-buffer-size: 4096
+            packet: yes
+            metadata: yes
+            http-body: yes
+            http-body-printable: yes
+        - http:
+            extended: yes
+        - dns:
+            version: 1
+        - tls:
+            extended: yes
+
+# Stream and TCP reassembly
+stream:
+  memcap: 67108864
+  checksum-validation: no
+  inline: no
+  reassembly:
+    memcap: 134217728
+    depth: 1048576
+
+# App-layer parsers
+app-layer:
+  protocols:
+    tls:
+      enabled: yes
+      detection-ports:
+        dp: 443
+    http:
+      enabled: yes
+    dns:
+      global-memcap: 16777216
+      state-memcap: 524288
+      tcp:
+        enabled: yes
+        detection-ports:
+          dp: 53
+      udp:
+        enabled: yes
+        detection-ports:
+          dp: 53

@@ -14,10 +14,12 @@ randomtor.list
 *.swp
 
 # Suricata log outputs
+nids/logs/
 eve.json
 fast.log
 suricata.log
 stats.log
+report.json
 *.pcap
 *.pcapng
 
